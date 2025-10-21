@@ -1,47 +1,34 @@
-# ANALISIS_FINANCIERO
+# Análisis Financiero
 
-## Descripcion
-Jupyter Notebook para [Describe brevemente que hace este proyecto]
+Predicción de precios de acciones con Machine Learning, ranking de portfolio y análisis de ratios financieros.
 
-## Caracteristicas
-- [Caracteristica 1]
-- [Caracteristica 2]
-- [Caracteristica 3]
+## Instalación
 
-## Requisitos
 ```bash
 pip install -r requirements.txt
 ```
 
-## Configuracion
-Antes de ejecutar el proyecto, crea un archivo `.env` con tus credenciales:
-```
-OPENAI_API_KEY=YOUR_API_KEY_HERE
-```
-
-**IMPORTANTE**: Nunca compartas tus API keys. Asegurate de que el archivo `.env` este en `.gitignore`
-
 ## Uso
-```python
-# Instrucciones de uso basico
+
+```bash
+# Ejecutar todo el análisis
+python run_all.py
+
+# O ejecutar scripts individuales:
+python stock_prediction.py      # Predicción con ML (KNN, Random Forest, LSTM, NN)
+python portfolio_ranking.py     # Ranking de portfolio (Magic Formula)
+python financial_ratios.py      # Análisis de ratios financieros
+
+# App web interactiva
+streamlit run app_streamlit.py
 ```
 
-## Estructura del Proyecto
-```
-ANALISIS_FINANCIERO/
-├── ANALISIS_FINANCIERO.ipynb
-├── README.md
-├── .gitignore
-├── requirements.txt
-└── .env (no incluido en git)
-```
+## Estructura
 
-## Licencia
-MIT
-
-## Autor
-[Tu Nombre]
-
-## Notas
-- Este proyecto requiere una API key válida
-- [Otras notas importantes]
+- `stock_prediction.py` - Predicción de precios con 4 modelos ML
+- `portfolio_ranking.py` - Ranking de acciones (Magic Formula)
+- `financial_ratios.py` - Análisis de métricas financieras
+- `app_streamlit.py` - Aplicación web interactiva
+- `models.py` - Definición de modelos
+- `utils.py` - Funciones auxiliares
+- `run_all.py` - Ejecuta todos los análisis

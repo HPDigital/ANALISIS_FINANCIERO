@@ -4,9 +4,6 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
-venv/
-ENV/
 build/
 develop-eggs/
 dist/
@@ -19,32 +16,68 @@ parts/
 sdist/
 var/
 wheels/
+pip-wheel-metadata/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
 
 # Jupyter Notebook
 .ipynb_checkpoints
-*.ipynb_checkpoints
+*.ipynb
 
 # Environment variables
 .env
 .env.local
 
-# IDE
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
+# Models
+models_saved/
+*.h5
+*.keras
+*.pkl
+*.joblib
+
+# Data
+data/
+*.csv
+!requirements.txt
+
+# Graficos
+graficos/
+*.html
+
+# Logs
+*.log
+
 # OS
 .DS_Store
 Thumbs.db
 
-# Data files
-*.csv
-*.xlsx
-*.xls
-*.db
-*.sqlite
+# Streamlit
+.streamlit/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Results
+*_results.csv
+portfolio_ranking_results.csv
+financial_ratios_results.csv
+financial_health_analysis.csv
