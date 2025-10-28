@@ -52,6 +52,10 @@ class FinancialAnalysisApp(tk.Tk):
         self.ticker_info: dict = {}
         self.financial_ratios: dict = {}
         self.predictions: dict = {}
+        # Modelo y scaler en memoria para guardar/cargar
+        self.trained_model = None
+        self.trained_scaler = None
+        self.loaded_model_bundle = None
 
         # Construir UI
         self._build_ui()
@@ -231,6 +235,14 @@ class FinancialAnalysisApp(tk.Tk):
         self.predict_btn = ttk.Button(controls, text="Entrenar y Predecir", command=self.run_prediction)
         self.predict_btn.grid(row=0, column=5, padx=20)
         self.predict_btn.state(["disabled"])
+        # Opciones para modelos guardados
+        self.use_loaded_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(controls, text="Usar modelo cargado", variable=self.use_loaded_var).grid(row=1, column=0, padx=5, pady=(8,0), sticky=tk.W)
+        self.save_model_btn = ttk.Button(controls, text="Guardar Modelo", command=self.save_current_model)
+        self.save_model_btn.grid(row=1, column=1, padx=5, pady=(8,0))
+        self.save_model_btn.state(["disabled"])
+        self.load_model_btn = ttk.Button(controls, text="Cargar Modelo", command=self.load_model_from_file)
+        self.load_model_btn.grid(row=1, column=2, padx=5, pady=(8,0))
 
         # Área de resultados
         results_frame = ttk.Frame(self.tab_prediction)
@@ -306,6 +318,10 @@ class FinancialAnalysisApp(tk.Tk):
 
         self.status_var.set(f"Descargando {ticker} ({period_label})...")
         self.update_idletasks()
+        try:
+            self._set_busy(True)
+        except Exception:
+            pass
 
         def download_thread():
             try:
@@ -331,9 +347,8 @@ class FinancialAnalysisApp(tk.Tk):
 
                 self.df_prices = data[["Date", "Open", "High", "Low", "Close", "Volume"]].copy()
 
-                # Obtener información del ticker
-                ticker_obj = yf.Ticker(ticker)
-                self.ticker_info = ticker_obj.info
+                # Obtener información del ticker (método tolerante)
+                self.ticker_info = self._safe_ticker_info(ticker)
 
                 # Actualizar UI en el hilo principal
                 self.after(0, self._update_ui_after_fetch)
@@ -347,6 +362,10 @@ class FinancialAnalysisApp(tk.Tk):
 
     def _update_ui_after_fetch(self):
         """Actualiza la UI después de descargar datos"""
+        try:
+            self._set_busy(False)
+        except Exception:
+            pass
         self._update_price_charts()
         self._update_data_table()
         self.export_btn.state(["!disabled"])
@@ -355,6 +374,10 @@ class FinancialAnalysisApp(tk.Tk):
 
     def _show_error(self, error_msg):
         """Muestra un error"""
+        try:
+            self._set_busy(False)
+        except Exception:
+            pass
         self.status_var.set("Error")
         messagebox.showerror("Error", error_msg)
 
@@ -505,11 +528,14 @@ class FinancialAnalysisApp(tk.Tk):
         self.ratios_text.delete(1.0, tk.END)
         self.ratios_text.insert(tk.END, "Cargando...\n")
         self.update_idletasks()
+        try:
+            self._set_busy(True)
+        except Exception:
+            pass
 
         def load_thread():
             try:
-                ticker_obj = yf.Ticker(ticker)
-                info = ticker_obj.info
+                info = self._safe_ticker_info(ticker)
 
                 ratios = {
                     'Symbol': ticker,
@@ -549,6 +575,10 @@ class FinancialAnalysisApp(tk.Tk):
 
     def _display_financial_ratios(self):
         """Muestra los ratios financieros"""
+        try:
+            self._set_busy(False)
+        except Exception:
+            pass
         self.ratios_text.delete(1.0, tk.END)
 
         ratios = self.financial_ratios
@@ -700,6 +730,11 @@ class FinancialAnalysisApp(tk.Tk):
             return
 
         self.status_var.set(f"Entrenando modelo {model_name}...")
+        try:
+            self._set_busy(True)
+        except Exception:
+            pass
+
         self.prediction_text.delete(1.0, tk.END)
         self.prediction_text.insert(tk.END, f"Entrenando modelo {model_name}...\n")
         self.update_idletasks()
@@ -714,10 +749,16 @@ class FinancialAnalysisApp(tk.Tk):
                 train_data = prices[:train_size]
                 test_data = prices[train_size:]
 
-                # Escalar
-                scaler = MinMaxScaler(feature_range=(0, 1))
-                train_scaled = scaler.fit_transform(train_data)
-                test_scaled = scaler.transform(test_data)
+                # Escalar (usar scaler cargado si disponible)
+                use_loaded = bool(getattr(self, 'use_loaded_var', tk.BooleanVar(value=False)).get()) and (self.loaded_model_bundle is not None)
+                if use_loaded and self.loaded_model_bundle.get('scaler') is not None:
+                    scaler = self.loaded_model_bundle['scaler']
+                    train_scaled = scaler.transform(train_data)
+                    test_scaled = scaler.transform(test_data)
+                else:
+                    scaler = MinMaxScaler(feature_range=(0, 1))
+                    train_scaled = scaler.fit_transform(train_data)
+                    test_scaled = scaler.transform(test_data)
 
                 # Crear datasets
                 def create_dataset(data, look_back):
@@ -734,25 +775,27 @@ class FinancialAnalysisApp(tk.Tk):
                 os.makedirs('models_saved', exist_ok=True)
 
                 # Entrenar modelo según selección
-                if model_name == "KNN":
-                    model = KNNModel(n_neighbors=5)
-                    model.train(X_train, y_train)
+                use_loaded = bool(getattr(self, 'use_loaded_var', tk.BooleanVar(value=False)).get()) and (self.loaded_model_bundle is not None)
+                if use_loaded and self.loaded_model_bundle is not None:
+                    model = self.loaded_model_bundle['model']
                     predictions = model.predict(X_test)
-
-                elif model_name == "Random Forest":
-                    model = RandomForestModel(n_estimators=100, max_depth=10)
-                    model.train(X_train, y_train)
-                    predictions = model.predict(X_test)
-
-                elif model_name == "LSTM":
-                    model = LSTMModel(look_back=look_back, lstm_units=32, dropout_rate=0.2)
-                    model.train(X_train, y_train, epochs=20, batch_size=64)
-                    predictions = model.predict(X_test)
-
-                elif model_name == "Neural Network":
-                    model = NeuralNetworkModel(input_dim=look_back)
-                    model.train(X_train, y_train, epochs=20, batch_size=64)
-                    predictions = model.predict(X_test)
+                else:
+                    if model_name == "KNN":
+                        model = KNNModel(n_neighbors=5)
+                        model.train(X_train, y_train)
+                        predictions = model.predict(X_test)
+                    elif model_name == "Random Forest":
+                        model = RandomForestModel(n_estimators=100, max_depth=10)
+                        model.train(X_train, y_train)
+                        predictions = model.predict(X_test)
+                    elif model_name == "LSTM":
+                        model = LSTMModel(look_back=look_back, lstm_units=32, dropout_rate=0.2)
+                        model.train(X_train, y_train, epochs=20, batch_size=64)
+                        predictions = model.predict(X_test)
+                    elif model_name == "Neural Network":
+                        model = NeuralNetworkModel(input_dim=look_back)
+                        model.train(X_train, y_train, epochs=20, batch_size=64)
+                        predictions = model.predict(X_test)
 
                 # Desescalar
                 predictions = scaler.inverse_transform(predictions.reshape(-1, 1))
@@ -771,6 +814,13 @@ class FinancialAnalysisApp(tk.Tk):
                     'rmse': rmse,
                     'look_back': look_back
                 }
+                # Actualizar refs de modelo y scaler
+                try:
+                    self.trained_model = model
+                    self.trained_scaler = scaler
+                    self.after(0, lambda: self.save_model_btn.state(["!disabled"]))
+                except Exception:
+                    pass
 
                 self.after(0, self._display_prediction_results)
 
@@ -836,6 +886,10 @@ class FinancialAnalysisApp(tk.Tk):
 
         self.status_var.set(f"Calculando ranking para {len(tickers)} acciones...")
         self.update_idletasks()
+        try:
+            self._set_busy(True)
+        except Exception:
+            pass
 
         # Limpiar tabla
         for row in self.ranking_tree.get_children():
@@ -847,8 +901,7 @@ class FinancialAnalysisApp(tk.Tk):
 
                 for ticker in tickers:
                     try:
-                        ticker_obj = yf.Ticker(ticker)
-                        info = ticker_obj.info
+                        info = self._safe_ticker_info(ticker)
 
                         data_list.append({
                             'symbol': ticker,
@@ -891,6 +944,10 @@ class FinancialAnalysisApp(tk.Tk):
 
     def _display_portfolio_ranking(self, df):
         """Muestra el ranking del portfolio"""
+        try:
+            self._set_busy(False)
+        except Exception:
+            pass
         for row in self.ranking_tree.get_children():
             self.ranking_tree.delete(row)
 
@@ -926,6 +983,113 @@ class FinancialAnalysisApp(tk.Tk):
             self.df_prices.to_csv(file, index=False)
             messagebox.showinfo("Exportar", f"Datos guardados en:\n{file}")
 
+    # Utilidades y gestión de modelos
+    def _set_busy(self, busy: bool):
+        try:
+            self.config(cursor="watch" if busy else "")
+            self.update_idletasks()
+        except Exception:
+            pass
+
+    def _safe_ticker_info(self, symbol: str) -> dict:
+        """Obtiene info/fast_info de yfinance con tolerancia a fallos."""
+        info: dict = {}
+        try:
+            t = yf.Ticker(symbol)
+            try:
+                fi = getattr(t, 'fast_info', None)
+                if fi:
+                    info.update({
+                        'currentPrice': getattr(fi, 'last_price', None),
+                        'marketCap': getattr(fi, 'market_cap', None),
+                        'fiftyTwoWeekHigh': getattr(fi, 'year_high', None),
+                        'fiftyTwoWeekLow': getattr(fi, 'year_low', None),
+                    })
+            except Exception:
+                pass
+            try:
+                base = t.info
+                if isinstance(base, dict):
+                    info = {**base, **info}
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return info
+
+    def save_current_model(self):
+        """Guarda el modelo entrenado y su scaler."""
+        if not self.predictions or self.trained_model is None or self.trained_scaler is None:
+            messagebox.showinfo("Modelos", "No hay modelo entrenado para guardar")
+            return
+        model_name = self.predictions.get('model_name')
+        look_back = self.predictions.get('look_back')
+        default_name = f"{self.ticker_var.get()}_{model_name}_lb{look_back}"
+
+        if model_name in ("KNN", "Random Forest"):
+            file = filedialog.asksaveasfilename(defaultextension=".pkl", filetypes=[("Pickle", "*.pkl")], initialfile=default_name)
+            if not file:
+                return
+            try:
+                self.trained_model.scaler = self.trained_scaler
+            except Exception:
+                pass
+            self.trained_model.save_model(file)
+        else:
+            file = filedialog.asksaveasfilename(defaultextension=".keras", filetypes=[("Keras", "*.keras;*.h5")], initialfile=default_name)
+            if not file:
+                return
+            try:
+                self.trained_model.save_model(file)
+            except Exception as e:
+                messagebox.showerror("Modelos", f"Error guardando modelo: {e}")
+                return
+            try:
+                import pickle as _p
+                scaler_path = file + ".scaler.pkl"
+                with open(scaler_path, "wb") as f:
+                    _p.dump(self.trained_scaler, f)
+            except Exception:
+                pass
+        messagebox.showinfo("Modelos", "Modelo guardado correctamente")
+
+    def load_model_from_file(self):
+        """Carga un modelo desde archivo y lo deja listo para usar."""
+        file = filedialog.askopenfilename(filetypes=[("Modelos", "*.pkl;*.keras;*.h5")])
+        if not file:
+            return
+        import os
+        try:
+            if file.lower().endswith(".pkl"):
+                from models import KNNModel
+                m = KNNModel()
+                m.load_model(file)
+                bundle = {"model": m, "scaler": getattr(m, 'scaler', None), "meta": {"type": "sklearn"}}
+            else:
+                model_name = self.model_var.get()
+                if model_name == "LSTM":
+                    from models import LSTMModel
+                    m = LSTMModel(look_back=int(self.lookback_var.get()))
+                else:
+                    from models import NeuralNetworkModel
+                    m = NeuralNetworkModel(input_dim=int(self.lookback_var.get()))
+                m.load_model(file)
+                scaler = None
+                try:
+                    import pickle as _p
+                    scaler_path = file + ".scaler.pkl"
+                    if os.path.exists(scaler_path):
+                        with open(scaler_path, "rb") as f:
+                            scaler = _p.load(f)
+                except Exception:
+                    pass
+                bundle = {"model": m, "scaler": scaler, "meta": {"type": "keras"}}
+
+            self.loaded_model_bundle = bundle
+            messagebox.showinfo("Modelos", "Modelo cargado. Active 'Usar modelo cargado' para predecir sin reentrenar.")
+        except Exception as e:
+            messagebox.showerror("Modelos", f"Error cargando modelo: {e}")
+
 
 def main():
     """Función principal"""
@@ -935,3 +1099,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
